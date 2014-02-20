@@ -1,74 +1,96 @@
 package controllers
 
-import play.api._
 import play.api.mvc._
-import play.api.mvc.BodyParsers.parse
 import play.api.libs.ws._
-import scala.concurrent.{Promise, Future}
-import scala.Option
 import play.api.libs.concurrent.Execution.Implicits._
-import play.api.libs.iteratee.{Iteratee, Enumerator}
 import com.ning.http.client.FluentCaseInsensitiveStringsMap
 import scala.collection.immutable.TreeMap
 import scala.collection.JavaConverters
 import play.core.utils.CaseInsensitiveOrdered
-import play.Logger.ALogger
-import play.api.http.Writeable
 
 object Application extends Controller {
-
   import scala.collection.JavaConverters._
-
-  def get(query: String) = Action.async(parse.anyContent) {
-    request =>
-
-      play.Logger.debug("GET " + request.headers.get("host").getOrElse("") + "/" + query)
-
-      request.headers.get("host") match {
-        case Some(host) =>
-          WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
-            get().map {
-            r =>
-              play.Logger.debug("return: " + request.headers.get("host").getOrElse("") + "/" + query)
-              handleResponse(r)
-          }.recover {
-            case ex: Throwable =>
-              InternalServerError(ex.getMessage)
-          }
-      }
-  }
 
   def handleResponse(r: Response) = {
     var ok = new Status(r.status)(r.getAHCResponse.getResponseBodyAsBytes)
-    var h2 = ningHeadersToMap(r.getAHCResponse.getHeaders)
+    var headers = ningHeadersToMap(r.getAHCResponse.getHeaders)
 
-    h2 -= "Transfer-Encoding"
+    headers -= "Transfer-Encoding"
 
-    val via = h2.get("Via").getOrElse("")
-    h2 += "Via" -> Seq(via + " delayProxy")
-    //h2 += "Connection" -> Seq("close")
+    val via = headers.get("Via").getOrElse("")
+    headers += "Via" -> Seq(via + " delayProxy")
+    //headers += "Connection" -> Seq("close")
 
-    h2.foreach(p => {
+    headers.foreach(p => {
       ok = ok.withHeaders((p._1, p._2.mkString(" ")))
     })
     ok
   }
 
+  def get(query: String) = Action.async(parse.anyContent) {
+    request =>
+      val host = request.host
+
+      play.Logger.debug(request.method + " " + host + "/" + query)
+//      play.Logger.debug(Play.application.configuration.getInt("http.port").getOrElse(0).toString)
+      WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
+        get().map {
+        r =>
+          play.Logger.debug("return: " + host + "/" + query)
+          handleResponse(r)
+      }.recover {
+        case ex: Throwable =>
+          InternalServerError(ex.getMessage)
+      }
+  }
+
+  def delete(query: String) = Action.async(parse.anyContent) {
+    request =>
+      val host = request.host
+
+      play.Logger.debug(request.method + " " + host + "/")
+      WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
+        delete().map {
+        r =>
+          play.Logger.debug("return: " + host + "/" + query)
+          handleResponse(r)
+      }.recover {
+        case ex: Throwable =>
+          InternalServerError(ex.getMessage)
+      }
+  }
+
   def post(query: String) = Action.async(parse.raw) {
     request =>
-      play.Logger.debug("POST " + request.headers.get("host").getOrElse("") + "/" + query)
-      val contentType = request.contentType.getOrElse("")
-      request.headers.get("host") match {
-        case Some(host) =>
-          WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
-            post(
-              request.body.asFile
-            ).map({
-            r => handleResponse(r)
-          }).recover {
-            case ex: Throwable =>
-              InternalServerError(ex.getMessage)
-          }
+
+      val host = request.host
+      play.Logger.debug(request.method + " " + host + "/" + query)
+
+      WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
+        post(
+          request.body.asFile
+        ).map({
+          r => handleResponse(r)
+        }).recover {
+        case ex: Throwable =>
+          InternalServerError(ex.getMessage)
+      }
+  }
+
+  def put(query: String) = Action.async(parse.raw) {
+    request =>
+
+      val host = request.host
+      play.Logger.debug(request.method + " " + host + "/" + query)
+
+      WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
+        put(
+          request.body.asFile
+        ).map({
+        r => handleResponse(r)
+      }).recover {
+        case ex: Throwable =>
+          InternalServerError(ex.getMessage)
       }
   }
 

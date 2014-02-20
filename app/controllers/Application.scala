@@ -16,66 +16,60 @@ import play.Logger.ALogger
 import play.api.http.Writeable
 
 object Application extends Controller {
+
   import scala.collection.JavaConverters._
 
-  def get(query: String) = Action.async(parse.anyContent) { request=>
+  def get(query: String) = Action.async(parse.anyContent) {
+    request =>
 
-    play.Logger.debug("GET " +request.headers.get("host").getOrElse("")+"/"+query)
+      play.Logger.debug("GET " + request.headers.get("host").getOrElse("") + "/" + query)
 
-    request.headers.get("host") match {
-      case Some(host) =>
-        WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
-        get().map { r =>
-        play.Logger.debug("return: "+request.headers.get("host").getOrElse("")+"/"+query)
-        var ok = new Status(r.status)(r.getAHCResponse.getResponseBodyAsBytes)
-        var h = Map[String, String]()
-        var h2 = ningHeadersToMap(r.getAHCResponse.getHeaders)
-        val headers = r.getAHCResponse.getHeaders
-
-        h2 -= "Transfer-Encoding"
-
-        val via = h2.get("Via").getOrElse("")
-        h2 += "Via" -> Seq(via + " delayProxy")
-        //h2 += "Connection" -> Seq("close")
-
-        h2.foreach(p => { ok = ok.withHeaders((p._1, p._2.mkString(" ")))})
-        ok
-      }.recover {
-        case ex: Throwable =>
-          InternalServerError("some exception...")
+      request.headers.get("host") match {
+        case Some(host) =>
+          WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
+            get().map {
+            r =>
+              play.Logger.debug("return: " + request.headers.get("host").getOrElse("") + "/" + query)
+              handleResponse(r)
+          }.recover {
+            case ex: Throwable =>
+              InternalServerError(ex.getMessage)
+          }
       }
-    }
   }
 
-  def post(query: String) = Action.async(parse.raw) { request =>
-    play.Logger.debug("POST " +request.headers.get("host").getOrElse("")+"/"+query)
-    val contentType = request.contentType.getOrElse("")
-    request.headers.get("host") match {
-      case Some(host) =>
-        //WS.url(s"http://${host}/${query}").
-        WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
-      post(
-        request.body.asFile
-      ).map { r =>
-        play.Logger.debug("POST return: "+request.headers.get("host").getOrElse("")+"/"+query)
-        var ok = new Status(r.status)(r.getAHCResponse.getResponseBodyAsBytes)
-        var h = Map[String, String]()
-        var h2 = ningHeadersToMap(r.getAHCResponse.getHeaders)
-        val headers = r.getAHCResponse.getHeaders
+  def handleResponse(r: Response) = {
+    var ok = new Status(r.status)(r.getAHCResponse.getResponseBodyAsBytes)
+    var h2 = ningHeadersToMap(r.getAHCResponse.getHeaders)
 
-        h2 -= "Transfer-Encoding"
+    h2 -= "Transfer-Encoding"
 
-        val via = h2.get("Via").getOrElse("")
-        h2 += "Via" -> Seq(via + " delayProxy")
-        //h2 += "Connection" -> Seq("close")
+    val via = h2.get("Via").getOrElse("")
+    h2 += "Via" -> Seq(via + " delayProxy")
+    //h2 += "Connection" -> Seq("close")
 
-        h2.foreach(p => { ok = ok.withHeaders((p._1, p._2.mkString(" ")))})
-        ok
-      }.recover {
-        case ex: Throwable =>
-          InternalServerError("some exception...")
+    h2.foreach(p => {
+      ok = ok.withHeaders((p._1, p._2.mkString(" ")))
+    })
+    ok
+  }
+
+  def post(query: String) = Action.async(parse.raw) {
+    request =>
+      play.Logger.debug("POST " + request.headers.get("host").getOrElse("") + "/" + query)
+      val contentType = request.contentType.getOrElse("")
+      request.headers.get("host") match {
+        case Some(host) =>
+          WS.WSRequestHolder(s"http://${host}/${query}", request.headers.toMap, request.queryString, None, None, None, None, None).
+            post(
+              request.body.asFile
+            ).map({
+            r => handleResponse(r)
+          }).recover {
+            case ex: Throwable =>
+              InternalServerError(ex.getMessage)
+          }
       }
-    }
   }
 
   // copied from WSRequest
